@@ -1,0 +1,467 @@
+<html>
+<head>
+<title>PARSEFIL.CPP.html</title>
+<style type="text/css"> PRE { font-family: Verdana; font-size: 8pt } </style>
+
+</head>
+<body><pre>
+<font color="green">// CodeToHTML version </font>
+
+<font color="blue">#include</font> &lt;iostream&gt;
+<font color="blue">#include</font> &lt;string&gt;
+<font color="blue">#include</font> &lt;cstring&gt;
+<font color="blue">#include</font> &lt;algorithm&gt;
+<font color="blue">#include</font> &lt;cstdlib&gt;
+<font color="blue">#include</font> &lt;fstream&gt;
+
+<font color="blue">#ifdef</font> _WIN32
+<font color="blue">#include</font> &lt;windows.h&gt;
+<font color="blue">#endif</font> 
+
+<font color="blue">#include</font> &lt;stdio.h&gt;
+<font color="blue">#include</font> &lt;errno.h&gt;
+
+
+<font color="green">// Added wildcard support for Win32</font>
+<font color="green">// Added proper file extension support</font>
+<font color="green">// Added &lt;pre&gt; tag and formatting directive</font>
+<font color="green">// Added C++ pointer/reference/address-of semantics</font>
+<font color="green">// Added string literal colorization </font>
+<font color="green">// Fixed tab character problem</font>
+<font color="green">// Fixed escaped characters in string literal bug</font>
+<font color="green">// Fixed &lt;&gt; chars in comments not being handled properly</font>
+
+<font color="blue">using</font> namespace std;
+
+<font color="blue">const</font> <font color="blue">int</font> MAX_KEYWORD = 64;
+<font color="blue">const</font> <font color="blue">int</font> KEYWORDS = 42;
+
+<font color="blue">const</font> <font color="blue">char</font>* keyWords[KEYWORDS] = { <font color="gray">"void"</font>, <font color="gray">"short"</font>, <font color="gray">"char"</font>, <font color="gray">"int"</font>, <font color="gray">"float"</font>, <font color="gray">"double"</font>, <font color="gray">"long"</font>,
+<font color="gray">"while"</font>, <font color="gray">"enum"</font> , <font color="gray">"if"</font>, <font color="gray">"else"</font>, <font color="gray">"switch"</font>, <font color="gray">"case"</font>, <font color="gray">"break"</font>, <font color="gray">"default"</font>,<font color="gray">"union"</font>, <font color="gray">"struct"</font>, 
+<font color="gray">"class"</font> ,<font color="gray">"private"</font>, <font color="gray">"public"</font>, <font color="gray">"for"</font>, <font color="gray">"do"</font>, <font color="gray">"#define"</font>, <font color="gray">"#include"</font>, <font color="gray">"#import"</font>, <font color="gray">"const"</font>,
+<font color="gray">"new"</font>, <font color="gray">"delete"</font>, <font color="gray">"this"</font>, <font color="gray">"friend"</font>, <font color="gray">"using"</font>, <font color="gray">"unsigned"</font>, <font color="gray">"signed"</font>, <font color="gray">"sizeof"</font>,
+<font color="gray">"return"</font>, <font color="gray">"true"</font>, <font color="gray">"false"</font>, <font color="gray">"bool"</font>, <font color="gray">"#pragma"</font>, <font color="gray">"#ifndef"</font>, <font color="gray">"#endif"</font>, <font color="gray">"#ifdef"</font> };
+
+<font color="blue">const</font> <font color="blue">int</font> MAX_DELIMS = 13;
+<font color="blue">const</font> <font color="blue">char</font> delims[MAX_DELIMS] = { <font color="gray">'='</font>,<font color="gray">'&lt;'</font>, <font color="gray">'&gt;'</font>, <font color="gray">';'</font>, <font color="gray">'\n'</font>, <font color="gray">'\t'</font>,<font color="gray">'*'</font>, <font color="gray">'&amp;'</font>, <font color="gray">':'</font>, <font color="gray">'('</font>, <font color="gray">')'</font>,<font color="gray">','</font>, <font color="gray">' '</font> };
+
+<font color="blue">char</font> keyWord[MAX_KEYWORD] = <font color="gray">""</font>;
+<font color="blue">int</font> keyIndex = 0;
+
+<font color="blue">int</font> outputChar(<font color="blue">char</font> ch, ofstream&amp; outFile) {
+	
+				<font color="blue">if</font>(ch == <font color="gray">'&gt;'</font>) {
+					outFile &lt;&lt; <font color="gray">"&amp;gt;"</font>;
+					<font color="blue">return</font> 0;
+				}
+				<font color="blue">else</font> <font color="blue">if</font> (ch == <font color="gray">'&lt;'</font>) {
+					outFile &lt;&lt; <font color="gray">"&amp;lt;"</font>;
+					<font color="blue">return</font> 0;
+				}
+				<font color="blue">else</font> <font color="blue">if</font>(ch == <font color="gray">'\n'</font>) {
+					outFile &lt;&lt; <font color="gray">"\n"</font>;   
+					<font color="blue">return</font> 0;
+				}
+				<font color="blue">else</font> <font color="blue">if</font>(ch == <font color="gray">'&amp;'</font>) {
+					outFile &lt;&lt; <font color="gray">"&amp;amp;"</font>;
+					<font color="blue">return</font> 0;
+				}
+				<font color="blue">else</font> {
+					outFile.put(ch);
+					<font color="blue">return</font> 0;
+				}
+				
+}
+
+<font color="blue">bool</font> isDelim(<font color="blue">char</font> ch) {
+	
+	<font color="blue">for</font>(<font color="blue">int</font> i = 0; i &lt; MAX_DELIMS; ++i) 
+		<font color="blue">if</font>(ch == delims[i])
+			<font color="blue">return</font> <font color="blue">true</font>;
+		
+		<font color="blue">return</font> <font color="blue">false</font>;
+}
+
+
+<font color="blue">int</font> keyMatch(<font color="blue">char</font> ch, ofstream&amp; outFile) {
+	
+	<font color="green">// no existing keyword, and character cannot be part of a keyword,</font>
+	<font color="green">// (i.e. a delimiter), output it</font>
+	<font color="blue">if</font>(strcmp(keyWord,<font color="gray">""</font>) == 0) {
+		<font color="blue">if</font>(isDelim(ch)) {
+			outputChar(ch, outFile);	
+			<font color="blue">return</font> 0;
+		}
+	}
+	
+	
+	<font color="green">// delimiter marks the end of a possible existing keyword		</font>
+	<font color="blue">if</font>(isDelim(ch)) {
+		<font color="green">// Search for a match</font>
+		<font color="blue">for</font>(<font color="blue">int</font> i = 0; i &lt; KEYWORDS; ++i) {	  	
+			<font color="blue">if</font>((strcmp((<font color="blue">const</font> <font color="blue">char</font>*)keyWord, keyWords[i])) == 0) {
+				outFile &lt;&lt; <font color="gray">"&lt;font color=\"blue\"&gt;"</font>;
+				outFile &lt;&lt; keyWord;
+				outFile &lt;&lt; <font color="gray">"&lt;/font&gt;"</font>;
+				outputChar(ch, outFile);
+				keyIndex = 0;
+				strncpy(keyWord,<font color="gray">"\0"</font>, 64);
+				<font color="blue">return</font> 1;
+			}
+		}
+		
+		<font color="green">// No match, keyword could be a var name, etc. </font>
+		outFile &lt;&lt; keyWord;
+		outFile.flush();
+		outputChar(ch, outFile);	
+		strncpy(keyWord, <font color="gray">"\0"</font>, 64);
+		keyIndex = 0;
+		<font color="blue">return</font> 0;
+		
+	}
+	<font color="blue">else</font> 	
+	{
+		<font color="green">// tack the character onto the keyword</font>
+		keyWord[keyIndex++] = ch;
+	}
+}
+
+<font color="green">// File states</font>
+<font color="blue">enum</font> Context { string_literal, char_literal, cpp_comment, c_comment, file_end, newline, keyword };
+
+<font color="green">// C-comment state</font>
+<font color="blue">void</font> handle_c_comment(ifstream&amp; inFile, ofstream&amp; outFile) {
+	
+	<font color="blue">char</font> ch;
+	
+	outFile &lt;&lt; <font color="gray">"&lt;font color=\"green\"&gt;"</font>;
+	outFile &lt;&lt; <font color="gray">"/*"</font>;
+	<font color="blue">while</font>(inFile.get(ch)) {
+		outFile &lt;&lt; ch;			<font color="green">// normal char</font>
+		<font color="blue">if</font>(ch == <font color="gray">'*'</font>) {
+			<font color="blue">while</font>(inFile.get(ch) &amp;&amp; ch == <font color="gray">'*'</font>)
+				outFile &lt;&lt; ch;
+			<font color="blue">if</font>(ch == <font color="gray">'/'</font>) {
+				outFile &lt;&lt; ch;
+				outFile &lt;&lt; <font color="gray">"&lt;/font&gt;"</font>;
+				<font color="blue">break</font>;
+			}
+		}
+	}
+}
+
+<font color="green">// C++ comment state</font>
+<font color="blue">void</font> handle_cpp_comment(ifstream&amp; inFile, ofstream&amp; outFile) {
+	
+	<font color="blue">char</font> ch;
+	outFile &lt;&lt; <font color="gray">"&lt;font color=\"green\"&gt;"</font>;
+	outFile &lt;&lt; <font color="gray">"//"</font>;
+	<font color="blue">while</font>(inFile.get(ch) &amp;&amp; ch != <font color="gray">'\n'</font>) 
+		outputChar(ch, outFile);
+	outFile &lt;&lt; <font color="gray">"&lt;/font&gt;\n"</font>;
+}
+
+<font color="green">// Literals (char, string)</font>
+<font color="green">// Make sure that &lt;,&gt;, etc are escaped inside literals!</font>
+<font color="blue">void</font> handle_literal(<font color="blue">char</font> delimiter, ifstream&amp; inFile, ofstream&amp; outFile) {
+	
+	outFile &lt;&lt; <font color="gray">"&lt;font color=\"gray\"&gt;"</font>;	
+	outFile.put(delimiter);
+	
+	<font color="blue">char</font> ch;
+	
+	<font color="blue">while</font>(inFile.get(ch)) {
+		
+		<font color="blue">if</font>(ch == delimiter) {
+			outFile.put(ch);
+			<font color="blue">break</font>;
+		}
+		<font color="blue">else</font> <font color="blue">if</font>(ch == <font color="gray">'\\'</font>){
+			outFile.put(ch);		<font color="green">// TEST</font>
+			inFile.get(ch) &amp;&amp; outFile.put(ch);
+		}
+		<font color="blue">else</font>
+			outputChar(ch, outFile);
+	}
+	
+	outFile &lt;&lt; <font color="gray">"&lt;/font&gt;"</font>;
+	
+}
+
+
+Context handle_code(ifstream&amp; inFile, ofstream&amp; outFile) {
+	<font color="blue">char</font> ch;
+	<font color="blue">while</font>(inFile.get(ch)) {
+		<font color="blue">switch</font>(ch) {
+		<font color="blue">case</font> <font color="gray">'/'</font>:
+			<font color="blue">if</font>(!inFile.get(ch)) {
+				outFile.put(<font color="gray">'/'</font>);
+				<font color="blue">return</font> file_end;
+			}
+			<font color="blue">else</font>
+			{
+				<font color="blue">if</font>(ch == <font color="gray">'*'</font>)
+					<font color="blue">return</font> c_comment;
+				<font color="blue">else</font> <font color="blue">if</font>(ch == <font color="gray">'/'</font>)
+					<font color="blue">return</font> cpp_comment;
+				<font color="blue">else</font> {
+					outFile.put(<font color="gray">'/'</font>);
+					inFile.putback(ch);
+					<font color="blue">break</font>;
+				}
+			}
+			
+		<font color="blue">case</font> <font color="gray">'\"'</font> : <font color="blue">return</font> string_literal;
+		<font color="blue">case</font> <font color="gray">'\''</font> : <font color="blue">return</font> char_literal;
+		<font color="blue">case</font> <font color="gray">'\n'</font> : <font color="blue">return</font> newline;
+			
+		<font color="blue">default</font>: 
+			{
+				keyMatch(ch, outFile);
+			}
+		}
+	}
+	
+	<font color="blue">return</font> file_end;
+	
+}
+
+<font color="blue">#ifdef</font> _WIN32
+
+<font color="blue">int</font> error(<font color="blue">int</font> errCode, <font color="blue">char</font>* message, <font color="blue">char</font>* param)
+{
+	cerr &lt;&lt; <font color="gray">"ERROR:"</font> &lt;&lt; errCode &lt;&lt;  <font color="gray">' '</font> &lt;&lt; message &lt;&lt; <font color="gray">' '</font> &lt;&lt;  param &lt;&lt; endl;
+	<font color="blue">return</font> 0;
+}
+
+
+
+<font color="blue">void</font> expand_wild (<font color="blue">int</font> argc, <font color="blue">char</font>** argv, <font color="blue">int</font>* pargc, <font color="blue">char</font>*** pargv)
+{
+	<font color="blue">int</font> i;
+	<font color="blue">int</font> new_argc;
+	<font color="blue">char</font> **new_argv;
+	<font color="green">/* Allocated size of new_argv.  We arrange it so there is always room for
+	one more element.  */</font>
+	<font color="blue">int</font> max_new_argc;
+	
+	new_argc = 0;
+	<font color="green">/* Add one so this is never zero.  */</font>
+	max_new_argc = argc + 1;
+	new_argv = (<font color="blue">char</font> **) malloc (max_new_argc * <font color="blue">sizeof</font> (<font color="blue">char</font> *));
+	
+	<font color="blue">for</font> (i = 0; i &lt; argc; ++i)
+	{
+        HANDLE h;
+        WIN32_FIND_DATA fdata;
+		
+        <font color="green">/* These variables help us extract the directory name from the
+		given pathname. */</font>
+		
+        <font color="blue">char</font> *last_forw_slash, *last_back_slash, *end_of_dirname;
+        <font color="blue">int</font> dirname_length = 0;
+		
+        <font color="green">/* FIXME: If argv[i] is ".", this code will expand it to the
+		name of the current directory in its parent directory which
+		will cause start_recursion to do all manner of strange things
+		with it (culminating in an error).  This breaks "cvs co .".
+		As nearly as I can guess, this bug has existed since
+		expand_wild was first created.  At least, it is in CVS 1.9 (I
+		just tried it).  */</font>
+		
+        <font color="green">/* FindFirstFile doesn't return pathnames, so we have to do
+		this ourselves.  Luckily, it's no big deal, since globbing
+		characters under Win32s can only occur in the last segment
+		of the path.  For example,
+		/a/path/q*h                      valid
+		/w32/q*dir/cant/do/this/q*h     invalid */</font>
+		
+        <font color="green">/* Win32 can handle both forward and backward slashes as
+		filenames -- check for both. */</font>
+		
+        last_forw_slash = strrchr (argv[i], <font color="gray">'/'</font>);
+        last_back_slash = strrchr (argv[i], <font color="gray">'\\'</font>);
+		
+<font color="blue">#define</font> cvs_max(x,y) ((x &gt;= y) ? (x) : (y))
+		
+        <font color="green">/* FIXME: this comparing a NULL pointer to a non-NULL one is
+		extremely ugly, and I strongly suspect *OT*sanctioned by
+		ANSI C.  The code should just use last_component instead.  */</font>
+        end_of_dirname = cvs_max (last_forw_slash, last_back_slash);
+		
+        <font color="blue">if</font> (end_of_dirname == NULL)
+			dirname_length = 0;        <font color="green">/* no directory name */</font>
+        <font color="blue">else</font>
+			dirname_length = end_of_dirname - argv[i] + 1; <font color="green">/* include slash */</font>
+		
+        h = FindFirstFile (argv[i], &amp;fdata);
+        <font color="blue">if</font> (h == INVALID_HANDLE_VALUE)
+        {
+            <font color="blue">if</font> (GetLastError() == ENOENT)
+            {
+			<font color="green">/* No match.  The file specified didn't contain a wildcard (in which case
+			we clearly should return it unchanged), or it contained a wildcard which
+			didn't match (in which case it might be better for it to be an error,
+				but we don't try to do that).  */</font>
+                new_argv [new_argc++] = strdup(argv[i]);
+
+<font color="blue">#ifdef</font> _DEBUG
+				cout &lt;&lt; <font color="gray">"new_argv["</font> &lt;&lt; new_argc &lt;&lt; <font color="gray">"]="</font> &lt;&lt; argv[i] &lt;&lt; endl;
+<font color="blue">#endif</font>
+
+                <font color="blue">if</font> (new_argc == max_new_argc)
+                {
+                    max_new_argc *= 2;
+                    new_argv = (<font color="blue">char</font>**)realloc(new_argv, max_new_argc * <font color="blue">sizeof</font> (<font color="blue">char</font>*));
+                }
+            }
+            <font color="blue">else</font>
+            {
+                error (errno, <font color="gray">"cannot find %s"</font>, argv[i]);
+            }
+        }
+        <font color="blue">else</font>
+        {
+            <font color="blue">while</font> (1)
+            {
+                new_argv[new_argc] = (<font color="blue">char</font> *) malloc (strlen (fdata.cFileName) + 1 + dirname_length);
+
+<font color="blue">#ifdef</font> _DEBUG
+				cout &lt;&lt; <font color="gray">"new_argv["</font> &lt;&lt; new_argc &lt;&lt; <font color="gray">"]="</font> &lt;&lt; argv[i] &lt;&lt; endl;
+<font color="blue">#endif</font>
+				
+                <font color="green">/* Copy the directory name, if there is one. */</font>
+				
+                <font color="blue">if</font> (dirname_length)
+                {
+                    strncpy (new_argv[new_argc], argv[i], dirname_length);
+                    new_argv[new_argc][dirname_length] = <font color="gray">'\0'</font>;
+                }
+                <font color="blue">else</font>
+                    new_argv[new_argc][0] = <font color="gray">'\0'</font>;
+				
+                <font color="green">/* Copy the file name. */</font>
+                
+                <font color="blue">if</font> (strcmp(argv[i] + dirname_length, fdata.cFileName) == 0)
+				
+				<font color="green">/* We didn't expand a wildcard; we just matched a filename.
+				Use the file name as specified rather than the filename
+				which exists in the directory (they may differ in case).
+				This is needed to make cvs add on a directory consistently
+				use the name specified on the command line, but it is
+				probably a good idea in other contexts too.  */</font>
+				strcpy (new_argv[new_argc], argv[i]);
+                <font color="blue">else</font>
+                    strcat (new_argv[new_argc], fdata.cFileName);
+				
+				
+                new_argc++;
+				
+                <font color="blue">if</font> (new_argc == max_new_argc)
+                {
+                    max_new_argc *= 2;
+                    new_argv = (<font color="blue">char</font>**)realloc (new_argv, max_new_argc * <font color="blue">sizeof</font> (<font color="blue">char</font> *));
+                }
+                
+				<font color="blue">if</font> (!FindNextFile (h, &amp;fdata))
+                {
+                    <font color="blue">if</font> (GetLastError () == ERROR_NO_MORE_FILES)
+                        <font color="blue">break</font>;
+                    <font color="blue">else</font>
+                        error (errno, <font color="gray">"cannot find %s"</font>, argv[i]);
+                }
+            }
+            <font color="blue">if</font> (!FindClose (h))
+                error (GetLastError (), <font color="gray">"cannot close %s"</font>, argv[i]);
+        }
+     }
+     
+     *pargc = new_argc;
+     *pargv = new_argv;
+}
+
+<font color="blue">#endif</font>
+ 
+
+
+
+<font color="blue">void</font> printHeader(<font color="blue">char</font>* fileName, ofstream&amp; outFile) {
+	outFile &lt;&lt; <font color="gray">"&lt;html&gt;\n&lt;head&gt;\n&lt;title&gt;"</font> &lt;&lt; fileName &lt;&lt; <font color="gray">"&lt;/title&gt;\n"</font>;
+	outFile &lt;&lt; <font color="gray">"&lt;style type=\"text/css\"&gt; PRE { font-family: Verdana; font-size: 8pt } &lt;/style&gt;\n"</font>;
+	outFile &lt;&lt; <font color="gray">"\n&lt;/head&gt;\n&lt;body&gt;&lt;pre&gt;\n"</font>;
+}
+
+
+<font color="blue">void</font> printFooter(ofstream&amp; outFile) {
+	outFile &lt;&lt; <font color="gray">"&lt;/pre&gt;&lt;/body&gt;\n&lt;/html&gt;"</font>;
+}
+
+
+<font color="green">// Main entry point</font>
+<font color="blue">int</font> main(<font color="blue">int</font> argc, <font color="blue">char</font>** argv) {
+	Context context;
+	
+	<font color="blue">if</font>(argc &lt; 2) {
+		cerr &lt;&lt; <font color="gray">"Usage: CodeToHTML &lt;infile&gt;"</font> &lt;&lt; endl;
+		cerr &lt;&lt; <font color="gray">"Wildcards may be used, e.g. CodeToHTML *.cpp"</font> &lt;&lt; endl;
+		exit(1);
+	}
+	
+<font color="blue">#ifdef</font> _DEBUG
+	cout &lt;&lt; <font color="gray">"argc="</font> &lt;&lt; argc &lt;&lt; <font color="gray">'\t'</font> &lt;&lt; argv[1] &lt;&lt; endl;
+<font color="blue">#endif</font>
+
+<font color="blue">#ifdef</font> _WIN32
+	expand_wild(argc, argv, &amp;argc, &amp;argv);
+<font color="blue">#endif</font>
+
+<font color="blue">#ifdef</font> _DEBUG
+	cout &lt;&lt; <font color="gray">"argc="</font> &lt;&lt; argc &lt;&lt; <font color="gray">'\t'</font> &lt;&lt; argv[1] &lt;&lt; endl;
+<font color="blue">#endif</font>
+	
+	<font color="blue">for</font>(<font color="blue">int</font> i = 1; i &lt; argc; ++i) {
+		<font color="blue">char</font> ofName[64];
+		
+		cout &lt;&lt; <font color="gray">"processing "</font> &lt;&lt; argv[i] &lt;&lt; <font color="gray">"..."</font>;
+
+		ifstream inFile(argv[i]);
+		strcpy(ofName, argv[i]);
+		
+		strcat(ofName, <font color="gray">".html"</font>);
+		ofstream outFile(ofName);
+		
+		printHeader(ofName, outFile);
+		
+		<font color="blue">while</font>((context = handle_code(inFile, outFile)) != file_end)
+			<font color="blue">switch</font>(context) {
+						<font color="blue">case</font> c_comment:
+							handle_c_comment(inFile, outFile);
+							<font color="blue">break</font>;
+						<font color="blue">case</font> cpp_comment:
+							handle_cpp_comment(inFile, outFile);
+							<font color="blue">break</font>;
+						<font color="blue">case</font> string_literal:
+							handle_literal(<font color="gray">'\"'</font>, inFile, outFile);
+							<font color="blue">break</font>;
+						<font color="blue">case</font> char_literal:
+							handle_literal(<font color="gray">'\''</font>, inFile, outFile);
+							<font color="blue">break</font>;
+						<font color="blue">case</font> newline:
+							keyMatch(<font color="gray">'\n'</font>, outFile);
+							<font color="blue">break</font>;
+		}
+		
+		printFooter(outFile);
+		outFile.close();
+
+		cout &lt;&lt; <font color="gray">"done\n"</font>;
+		
+	}
+	
+	<font color="blue">return</font> 0;
+}
+
+
+
+</pre></body>
+</html>
